@@ -373,6 +373,73 @@ footer.site a:hover{color:var(--accent);border-bottom-color:var(--accent);}
 .totop:hover{color:var(--accent);border-color:var(--accent);box-shadow:0 4px 18px rgba(179,84,30,.16);}
 @media(max-width:720px){.totop{right:16px;bottom:16px;width:40px;height:40px;}}
 
+/* ---------- 访问口令锁 ---------- */
+.gate{
+  position:fixed;inset:0;z-index:9999;
+  background:var(--bg);
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;
+}
+.gate.done{display:none;}
+.gate-card{
+  width:100%;max-width:400px;background:var(--surface);
+  border:1px solid var(--line);padding:34px 32px 30px;
+  text-align:center;
+}
+.gate-icon{
+  width:46px;height:46px;margin:0 auto 20px;
+  border:1.5px solid var(--accent);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--accent);font-size:19px;
+}
+.gate h2{
+  font-family:var(--serif);font-size:23px;margin:0 0 10px;font-weight:700;
+}
+.gate p{
+  color:var(--ink-2);font-size:14.5px;line-height:1.75;margin:0 0 22px;
+}
+.gate-hint{
+  font-size:12.5px;color:var(--ink-3);margin:0 0 22px;
+  padding:11px 14px;background:var(--bg);border:1px dashed var(--line-2);
+  line-height:1.7;
+}
+.gate-form{display:flex;gap:9px;margin-bottom:14px;}
+.gate-form input{
+  flex:1;min-width:0;font-family:var(--sans);font-size:15px;
+  padding:11px 14px;border:1px solid var(--line-2);background:var(--surface);
+  color:var(--ink);outline:none;transition:.18s;
+}
+.gate-form input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.gate-form button{
+  font-family:var(--sans);font-size:14.5px;font-weight:600;
+  padding:11px 20px;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;cursor:pointer;transition:.18s;
+  white-space:nowrap;
+}
+.gate-form button:hover{background:#9c4618;border-color:#9c4618;}
+.gate-err{
+  font-size:13px;color:#a32d2d;margin:0;min-height:20px;
+  opacity:0;transition:opacity .2s;
+}
+.gate-err.show{opacity:1;}
+.gate-foot{
+  margin-top:22px;padding-top:18px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink-3);line-height:1.7;
+}
+/* 内容锁：未解锁时隐藏正文（顶栏整体隐藏，由口令页接管） */
+body.locked .wrap,
+body.locked .topbar,
+body.locked .totop{visibility:hidden;}
+
+/* 顶栏「退出阅读」 */
+.lockbtn{
+  font-size:12.5px;padding:4px 11px;border-radius:3px;
+  border:1px solid var(--line-2);background:var(--surface);
+  color:var(--ink-2);cursor:pointer;font-family:var(--sans);
+  letter-spacing:.03em;transition:.18s;white-space:nowrap;
+}
+.lockbtn:hover{color:var(--accent);border-color:var(--accent);}
+
 /* ---------- 细节打磨 ---------- */
 ::selection{background:var(--accent-soft);color:var(--accent);}
 body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
@@ -394,7 +461,28 @@ a{transition:color .18s ease,border-color .18s ease;}
 }
 </style>
 </head>
-<body>
+<body class="locked">
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-icon">🔒</div>
+    <h2>本报告仅供课程内部交流</h2>
+    <p>这是一份课程作业报告，内容限于本课同学与任课教师之间传阅。</p>
+    <div class="gate-hint">
+      访问口令请向<b>任课教师</b>或<b>课程群</b>获取。<br>
+      老师同学直接从作业清单里的链接进入即可。
+    </div>
+    <div class="gate-form">
+      <input type="password" id="gateInput" placeholder="请输入访问口令" autocomplete="off" spellcheck="false">
+      <button type="button" id="gateBtn">进入</button>
+    </div>
+    <p class="gate-err" id="gateErr">口令不正确，请重新输入</p>
+    <div class="gate-foot">
+      AI Agent 使用报告 · 人工智能概论课程作业<br>
+      作者署名与完整信息在报告正文中
+    </div>
+  </div>
+</div>
 
 <div class="topbar">
   <div class="topbar-in">
@@ -408,6 +496,7 @@ a{transition:color .18s ease,border-color .18s ease;}
       <a href="#pitfalls">踩坑实录</a>
       <a href="#about">关于我</a>
     </nav>
+    <button class="lockbtn" id="lockBtn" type="button">退出阅读</button>
   </div>
 </div>
 
@@ -1161,6 +1250,94 @@ a{transition:color .18s ease,border-color .18s ease;}
 <a href="#" class="totop" id="totop" aria-label="回到顶部">↑</a>
 
 <script>
+/* ============================================================
+   访问口令锁
+   ------------------------------------------------------------
+   口令以 SHA-256 哈希形式内嵌，源码里不出现明文。
+   ⚠️ 需要说明：这是「防止随手点开」级别的遮挡，不是服务器端鉴权。
+      懂技术的人查看源码仍可取得哈希并离线穷举。
+      真正的访问控制需要服务端或企业版方案。
+   ============================================================ */
+(function(){
+  var GATE_HASH = '8f28d2dc917c6d80f0c77fa458b9bdf6372a03e174cfcfdc83e898a14790c22c';
+  var SESSION_KEY = 'agent_report_unlocked';
+
+  var gate = document.getElementById('gate');
+  var input = document.getElementById('gateInput');
+  var btn = document.getElementById('gateBtn');
+  var err = document.getElementById('gateErr');
+  if(!gate) return;
+
+  // SHA-256（纯前端实现，用 Web Crypto）
+  function sha256(text){
+    if(window.crypto && window.crypto.subtle && window.TextEncoder){
+      return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+        .then(function(buf){
+          return Array.from(new Uint8Array(buf))
+            .map(function(b){ return b.toString(16).padStart(2,'0'); })
+            .join('');
+        });
+    }
+    // 兜底：简易哈希（老浏览器）
+    var h = 0;
+    for(var i=0;i<text.length;i++){
+      h = (h<<5) - h + text.charCodeAt(i);
+      h |= 0;
+    }
+    return Promise.resolve('fb' + (h >>> 0).toString(16));
+  }
+
+  function unlock(){
+    document.body.classList.remove('locked');
+    gate.classList.add('done');
+    try{ sessionStorage.setItem(SESSION_KEY, '1'); }catch(e){}
+    window.scrollTo(0,0);
+  }
+
+  function relock(){
+    document.body.classList.add('locked');
+    gate.classList.remove('done');
+    try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+    if(input){ input.value=''; input.focus(); }
+  }
+
+  function tryUnlock(){
+    var v = input.value.trim();
+    if(!v) return;
+    err.classList.remove('show');
+    sha256(v).then(function(h){
+      if(h === GATE_HASH){
+        unlock();
+      }else{
+        err.classList.add('show');
+        input.select();
+      }
+    });
+  }
+
+  btn.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); tryUnlock(); }
+  });
+  input.addEventListener('input', function(){ err.classList.remove('show'); });
+
+  // 本次会话内已解锁则直接进入
+  var unlocked = false;
+  try{ unlocked = sessionStorage.getItem(SESSION_KEY) === '1'; }catch(e){}
+  if(unlocked){ unlock(); }else{ setTimeout(function(){ input.focus(); },100); }
+
+  // 供顶栏「退出阅读」调用
+  window.__relockReport = relock;
+
+  var lockBtn = document.getElementById('lockBtn');
+  if(lockBtn){
+    lockBtn.addEventListener('click', function(){
+      relock();
+    });
+  }
+})();
+
+/* ---------- 回顶按钮 + 顶栏阴影 ---------- */
 (function(){
   var btn = document.getElementById('totop');
   var top = document.querySelector('.topbar');
